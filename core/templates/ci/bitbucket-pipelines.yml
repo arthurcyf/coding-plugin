@@ -1,0 +1,20 @@
+# coding-plugin CI gate: the same secret scan and check command that the agent and git hooks use.
+image: {{image}}
+
+definitions:
+  steps:
+    - step: &coding-plugin
+        name: coding-plugin (secret scan + checks)
+        script:
+          # {{setup}}
+          - python3 .coding-plugin/bin/coding_plugin.py ci
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *coding-plugin
+  branches:
+    main:
+      - step: *coding-plugin
+    master:
+      - step: *coding-plugin

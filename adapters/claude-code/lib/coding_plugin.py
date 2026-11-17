@@ -40,7 +40,7 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IS_WINDOWS = os.name == "nt"
@@ -1252,6 +1252,143 @@ _CI_STACK_SETUP = {
     "none": "",
 }
 
+# ---- CI systems -------------------------------------------------------------
+CI_SYSTEMS = ("github", "gitlab", "bitbucket", "azure")
+CI_CHOICES = ("auto",) + CI_SYSTEMS + ("none",)
+CI_FILES = {
+    "github": ".github/workflows/coding-plugin.yml",
+    "gitlab": ".gitlab-ci.yml",
+    "bitbucket": "bitbucket-pipelines.yml",
+    "azure": "azure-pipelines.yml",
+}
+CI_RUN = "python3 .coding-plugin/bin/coding_plugin.py ci"
+_CI_IMAGE = {"python": "python:3.12", "node": "node:lts", "go": "golang:1", "rust": "rust:1", "none": "python:3.12"}
+_PY_DEPS = [
+    "python3 -m pip install --upgrade pip",
+    "if [ -f requirements-dev.txt ]; then python3 -m pip install -r requirements-dev.txt; fi",
+    "if [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; fi",
+    "if [ -f pyproject.toml ]; then python3 -m pip install -e . || true; fi",
+]
+_APT_PYTHON = "apt-get update -qq && apt-get install -y -qq python3 > /dev/null"
+# stack -> (setup needed only in container images, setup needed everywhere)
+_CI_SETUP: Dict[str, Tuple[List[str], List[str]]] = {
+    "python": ([], _PY_DEPS),
+    "node": ([], ["npm ci"]),
+    "go": ([_APT_PYTHON], []),
+    "rust": ([_APT_PYTHON], ["rustup component add rustfmt clippy"]),
+    "none": ([], []),
+}
+# One step to add to an existing pipeline, per CI system.
+_CI_STEP = {
+    "github": "- name: coding-plugin (secret scan + checks)\n  run: {cmd}",
+    "gitlab": "script:\n  - {cmd}",
+    "bitbucket": "script:\n  - {cmd}",
+    "azure": "- script: {cmd}\n  displayName: coding-plugin (secret scan + checks)",
+    "circleci": "- run: {cmd}",
+    "jenkins": "sh '{cmd}'",
+}
+
+
+def detect_ci(target: str) -> List[Tuple[str, str]]:
+    """Existing CI configuration in a project as (system, repo-relative path); ignores our own workflow."""
+    found: List[Tuple[str, str]] = []
+    wf = os.path.join(target, ".github", "workflows")
+    if os.path.isdir(wf):
+        for name in sorted(os.listdir(wf)):
+            if name.endswith((".yml", ".yaml")) and name != os.path.basename(CI_FILES["github"]):
+                found.append(("github", f".github/workflows/{name}"))
+    for system, rel in (
+        ("gitlab", ".gitlab-ci.yml"),
+        ("bitbucket", "bitbucket-pipelines.yml"),
+        ("azure", "azure-pipelines.yml"),
+        ("azure", ".azure-pipelines"),
+        ("jenkins", "Jenkinsfile"),
+        ("circleci", ".circleci/config.yml"),
+    ):
+        if os.path.exists(os.path.join(target, *rel.split("/"))):
+            found.append((system, rel))
+    return found
+
+
+def infer_ci_from_remote(target: str) -> str:
+    url = (git_text(target, "remote", "get-url", "origin") or "").lower()
+    for marker, system in (("gitlab", "gitlab"), ("bitbucket", "bitbucket"),
+                           ("dev.azure.com", "azure"), ("visualstudio.com", "azure")):
+        if marker in url:
+            return system
+    return "github"
+
+
+def ci_step_note(system: str, path: str) -> str:
+    step = _CI_STEP[system].format(cmd=CI_RUN)
+    indented = "\n".join("      " + ln for ln in step.splitlines())
+    return (
+        f"existing {system} CI in {path}: add this step after your dependency install "
+        "(if that pipeline already runs your tests, add only "
+        "`python3 .coding-plugin/bin/coding_plugin.py scan-secrets --all`):\n" + indented
+    )
+
+
+def _render_ci(template: bytes, image: str, commands: List[str], fmt: str) -> bytes:
+    """Replace '{{image}}' and expand a '# {{setup}}' line into one item per command."""
+    out: List[str] = []
+    for line in template.decode("utf-8").splitlines(keepends=True):
+        if line.strip() == "# {{setup}}":
+            indent = line[: len(line) - len(line.lstrip())]
+            out += [indent + fmt.format(cmd=json.dumps(c)) + "\n" for c in commands]
+        else:
+            out.append(line)
+    return "".join(out).replace("{{image}}", image).encode("utf-8")
+
+
+def ci_file_content(system: str, stack: str, tdir: str) -> bytes:
+    def tmpl(name: str) -> bytes:
+        return _lf(_read_bytes(os.path.join(tdir, "ci", name)))
+
+    container_only, common = _CI_SETUP[stack]
+    if system == "github":
+        return tmpl("github-actions.yml").replace(_CI_PLACEHOLDER.encode(), _CI_STACK_SETUP[stack].encode())
+    if system in ("gitlab", "bitbucket"):
+        name = "gitlab-ci.yml" if system == "gitlab" else "bitbucket-pipelines.yml"
+        return _render_ci(tmpl(name), _CI_IMAGE[stack], container_only + common, "- {cmd}")
+    if system == "azure":
+        return _render_ci(tmpl("azure-pipelines.yml"), "", common, "- script: {cmd}")
+    raise ValueError(system)
+
+
+def _plan_ci(target: str, stack: str, ci: str, tdir: str
+             ) -> Tuple[List[Tuple[str, bytes, str, bool]], List[str], List[str]]:
+    """Decide which CI file (if any) to create. Returns (plan entries, report lines, notes)."""
+    existing = detect_ci(target)
+    report = [f"detected   {rel}  ({system} CI)" for system, rel in existing]
+    notes: List[str] = []
+    seen_systems = set()
+    step_notes = []
+    for system, rel in existing:
+        if system not in seen_systems:
+            seen_systems.add(system)
+            step_notes.append(ci_step_note(system, rel))
+    system = ci
+    if ci == "auto":
+        if os.path.isfile(os.path.join(target, *CI_FILES["github"].split("/"))):
+            system = "github"  # we created it earlier; keep managing it
+        elif existing:
+            notes.append("existing CI found, so no pipeline file was created (re-run with --ci <system> "
+                         "to add a separate one).")
+            return [], report, notes + step_notes
+        else:
+            system = infer_ci_from_remote(target)
+    if system == "none":
+        return [], report, (step_notes if existing else ["no CI configured (--ci none)."])
+    rel = CI_FILES[system]
+    if system == "github" and "github" in seen_systems:
+        notes.append(f"{rel} runs alongside your existing workflows. To avoid running the tests twice, "
+                     "consider adding the step to an existing workflow instead and re-running with --ci none.")
+        notes += [n for n in step_notes if n.startswith("existing github")]
+    elif os.path.isfile(os.path.join(target, *rel.split("/"))):
+        notes += [n for n in step_notes if f" in {rel}:" in n]
+    return [(rel, ci_file_content(system, stack, tdir), "ci", False)], report, notes
+
 
 def _read_bytes(path: str) -> bytes:
     with open(path, "rb") as fh:
@@ -1262,12 +1399,14 @@ def _lf(data: bytes) -> bytes:
     return data.replace(b"\r\n", b"\n")
 
 
-def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite: Iterable[str] = ()) -> Result:
+def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite: Iterable[str] = (),
+            ci: str = "auto") -> Result:
     """Vendor the core and copy templates into a project, never silently overwriting.
 
     Policies: managed = toolkit-owned, always updated; user = created once,
-    reported as a conflict if it exists with different content; lines = the
-    listed lines are appended if missing.
+    reported as a conflict if it exists with different content; ci = like user,
+    but an existing pipeline is reported as 'existing' (never offered for
+    overwrite); lines = the listed lines are appended if missing.
     """
     tdir = find_resource_dir("templates")
     rdir = find_resource_dir("rules")
@@ -1275,6 +1414,8 @@ def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite
         return Result(EXIT_BLOCK, "coding-plugin install: templates/ or rules/ not found next to this script.")
     if stack not in STACKS:
         return Result(EXIT_BLOCK, f"coding-plugin install: unknown stack {stack!r} (choose from {', '.join(STACKS)}).")
+    if ci not in CI_CHOICES:
+        return Result(EXIT_BLOCK, f"coding-plugin install: unknown CI {ci!r} (choose from {', '.join(CI_CHOICES)}).")
     target = os.path.abspath(target)
     overwrite = {o.replace("\\", "/") for o in overwrite}
     notes: List[str] = []
@@ -1293,17 +1434,13 @@ def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite
         (CONFIG_FILE, tmpl("coding-plugin.json"), "user", False),
         (".githooks/pre-commit", tmpl("githooks", "pre-commit"), "user", True),
         (".githooks/pre-push", tmpl("githooks", "pre-push"), "user", True),
-        (
-            ".github/workflows/coding-plugin.yml",
-            tmpl("ci", "github-actions.yml").replace(_CI_PLACEHOLDER.encode(), _CI_STACK_SETUP[stack].encode()),
-            "user",
-            False,
-        ),
         ("AGENTS.md", tmpl("AGENTS.md.tmpl"), "user", False),
         (".gitattributes", b".githooks/* text eol=lf\nscripts/check text eol=lf\n", "lines", False),
     ]
     if stack != "none":
         plan.append(("scripts/check", tmpl("check", f"{stack}.sh"), "user", True))
+    ci_entries, ci_report, ci_notes = _plan_ci(target, stack, ci, tdir)
+    plan += ci_entries
     for agent in agents:
         if agent not in KNOWN_AGENTS:
             notes.append(f"unknown agent {agent!r} ignored (known: {', '.join(KNOWN_AGENTS)}).")
@@ -1322,7 +1459,8 @@ def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite
         if agent in agents:
             notes.append(f"{agent}: reads AGENTS.md natively; git hooks and CI enforce the checks.")
 
-    report: List[str] = []
+    notes += ci_notes
+    report: List[str] = list(ci_report)
     writes: List[Tuple[str, bytes, bool]] = []
     for rel, content, policy, executable in plan:
         dest = os.path.join(target, *rel.split("/"))
@@ -1349,6 +1487,8 @@ def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite
         elif rel in overwrite:
             report.append(f"overwrite  {rel}")
             writes.append((dest, content, executable))
+        elif policy == "ci":
+            report.append(f"existing   {rel}  (your pipeline is left unchanged; see the note below)")
         else:
             report.append(f"conflict   {rel}  (exists with different content; pass --overwrite {rel} to replace)")
     if not dry_run:
@@ -1473,6 +1613,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--agents", default="", help="comma-separated: " + ",".join(KNOWN_AGENTS))
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--overwrite", action="append", default=[], help="repo-relative path to replace")
+    s.add_argument("--ci", default="auto", choices=CI_CHOICES,
+                   help="CI pipeline to generate. auto: none if a pipeline already exists (prints the step to "
+                        "add), otherwise chosen from the git remote (default github)")
     sub.add_parser("hook", help="process a normalized event from stdin")
     sub.add_parser("version", help="print the version")
     return p
@@ -1494,7 +1637,7 @@ def _dispatch(args: argparse.Namespace) -> Result:
         return _handle(event)
     if args.cmd == "install":
         agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-        return install(args.target, args.stack, agents, args.dry_run, args.overwrite)
+        return install(args.target, args.stack, agents, args.dry_run, args.overwrite, args.ci)
     ctx = Ctx(args.cwd)
     if args.cmd == "guard-command":
         words = [w for w in args.command if w != "--"] if args.command[:1] == ["--"] else args.command

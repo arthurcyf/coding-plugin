@@ -1,0 +1,21 @@
+# coding-plugin CI gate: the same secret scan and check command that the agent and git hooks use.
+trigger:
+  branches:
+    include: [main, master]
+
+pr:
+  branches:
+    include: ["*"]
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.12"
+  # {{setup}}
+  - script: python3 .coding-plugin/bin/coding_plugin.py ci
+    displayName: coding-plugin (secret scan + checks)
+    env:
+      CI: "true"

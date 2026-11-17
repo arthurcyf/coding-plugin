@@ -27,7 +27,10 @@ adapters/claude-code/skills/init/assets/templates/check/go.sh
 adapters/claude-code/skills/init/assets/templates/check/node.sh
 adapters/claude-code/skills/init/assets/templates/check/python.sh
 adapters/claude-code/skills/init/assets/templates/check/rust.sh
+adapters/claude-code/skills/init/assets/templates/ci/azure-pipelines.yml
+adapters/claude-code/skills/init/assets/templates/ci/bitbucket-pipelines.yml
 adapters/claude-code/skills/init/assets/templates/ci/github-actions.yml
+adapters/claude-code/skills/init/assets/templates/ci/gitlab-ci.yml
 adapters/claude-code/skills/init/assets/templates/coding-plugin.json
 adapters/claude-code/skills/init/assets/templates/githooks/pre-commit
 adapters/claude-code/skills/init/assets/templates/githooks/pre-push

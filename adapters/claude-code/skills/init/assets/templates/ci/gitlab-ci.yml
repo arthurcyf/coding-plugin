@@ -1,0 +1,9 @@
+# coding-plugin CI gate: the same secret scan and check command that the agent and git hooks use.
+coding-plugin:
+  image: {{image}}
+  script:
+    # {{setup}}
+    - python3 .coding-plugin/bin/coding_plugin.py ci
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

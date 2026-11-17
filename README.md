@@ -29,7 +29,7 @@ Claude Code is the first supported agent (as a plugin). Enforcement also works w
 |---|---|---|
 | Agent hooks (Claude Code) | During the session | Command guard, path guard, secret-read guard, format on edit, checks before stopping, session context |
 | Git hooks (`.githooks/`) | Commit and push, by any agent or human | Secret scan, protected paths, no force-push or deletion of main, checks before push |
-| CI (`.github/workflows/coding-plugin.yml`) | Every push and pull request | Full secret scan and the check command |
+| CI (GitHub Actions, GitLab, Bitbucket, Azure, or a step in your existing pipeline) | Every push and pull request | Full secret scan and the check command |
 
 ## Quick start
 
@@ -55,7 +55,7 @@ Clone this repo once, then in each project:
 python3 /path/to/coding-plugin/core/scripts/coding_plugin.py install --target . --stack python --agents codex --dry-run
 python3 /path/to/coding-plugin/core/scripts/coding_plugin.py install --target . --stack python --agents codex
 ```
-Stacks: `python`, `node`, `go`, `rust`, `none`.
+Stacks: `python`, `node`, `go`, `rust`, `none`. For CI, see [CI](#ci) below.
 
 This vendors the core into `.coding-plugin/bin/`, so the git hooks and CI need nothing else installed. Commit `.coding-plugin/bin/`. Logs and state in `.coding-plugin/` are ignored automatically.
 
@@ -102,6 +102,22 @@ The per-agent designs are in [adapters/README.md](adapters/README.md).
 - prettier, but only from the project's `node_modules/.bin` (never via npx)
 - gofmt
 - rustfmt
+
+### CI
+CI runs a single command, so it works on any CI system:
+```
+python3 .coding-plugin/bin/coding_plugin.py ci     # full secret scan + the check command
+```
+`install --ci <choice>` (and `/coding-plugin:init`) decides what to generate:
+
+| `--ci` | Result |
+|---|---|
+| `auto` (default) | **If a pipeline already exists** (GitHub workflows, GitLab, Bitbucket, Azure, Jenkins, CircleCI), it creates nothing and prints the one step to add to it. **Otherwise** it picks the system from the git remote, defaulting to GitHub. |
+| `github` | `.github/workflows/coding-plugin.yml`, a separate workflow that runs next to your others |
+| `gitlab` / `bitbucket` / `azure` | `.gitlab-ci.yml` / `bitbucket-pipelines.yml` / `azure-pipelines.yml`, only if that file doesn't exist yet |
+| `none` | No CI file |
+
+**Existing pipelines are never modified or replaced** unless you explicitly pass `--overwrite <file>`. The init skill offers to add the step to your pipeline for you, and shows the diff before editing. If your pipeline already runs the tests, add only `coding_plugin.py scan-secrets --all`, so the tests don't run twice.
 
 ### Disabling guards
 - **Permanently:** `"disabledGuards": ["read-secrets", "pipe-to-shell"]`.

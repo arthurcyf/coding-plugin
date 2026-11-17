@@ -1,0 +1,29 @@
+# AGENTS.md
+
+> The single source of project instructions for AI coding agents and humans.
+> Agent-specific files (for example CLAUDE.md) import or point to this file. Keep it short and current.
+
+## Project overview
+<!-- What this project does, who uses it, and the constraints that matter. -->
+
+## Architecture
+<!-- The main directories and components and how they fit together. One line each. -->
+
+## Commands
+- Check everything (format, lint, typecheck, tests): `scripts/check`
+- Run tests only: <!-- e.g. `pytest -q` -->
+- Run the app locally: <!-- e.g. `npm run dev` -->
+
+## Conventions
+<!-- Code style, naming, error handling, testing patterns, commit messages. -->
+
+## Definition of done
+- `scripts/check` passes locally.
+- New behaviour has tests; bug fixes start with a failing test that reproduces the bug.
+- No changes to protected paths (see `.coding-plugin.json`) without explicit approval.
+- This file and the docs are updated when commands or conventions change.
+
+## Boundaries
+- Work on a feature branch, never directly on main.
+- Never commit secrets, and never read `.env` or other secrets files.
+- Ask before adding dependencies, changing public APIs or making large refactors.

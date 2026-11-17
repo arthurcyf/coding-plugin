@@ -1,0 +1,4 @@
+# Shell scripts and git hooks must keep LF endings on Windows checkouts.
+* text=auto eol=lf
+*.png binary
+*.zip binary

@@ -1,0 +1,22 @@
+---
+name: review
+description: Review the current diff or branch against main for correctness, tests, conventions and security, and report verified findings by severity. Use before committing or opening a pull request, or when asked to review changes.
+---
+# Review the current changes
+
+## 1. Scope
+- **Base:** the branch the user named; otherwise `main`, or `master` if there is no `main`.
+- **Merge base:** `git merge-base HEAD <base>`.
+- **Changes to review:** `git diff <merge-base>` (commits on this branch plus uncommitted changes), plus untracked files from `git status --porcelain`. If you are on the base branch itself, review the uncommitted changes (`git diff HEAD`) and untracked files.
+- If nothing has changed, say so and stop.
+- Read AGENTS.md for conventions and the definition of done. Work out the intent from commit messages or the linked issue, or ask.
+
+## 2. Review
+- {{delegate:reviewer}}
+- If the diff touches authentication, authorization, input parsing, file/shell/SQL access, secrets, cryptography or dependencies, also: {{delegate:security-auditor}}
+- Run the project check command (see AGENTS.md; usually `scripts/check`) and include its result.
+
+## 3. Report
+Use the reviewer's output format: a verdict, then **Blocking**, **Should fix** and **Nits** with `path:line`, then the checks. Merge duplicate findings from the two roles.
+
+Don't change code during a review unless the user asks you to fix the findings.

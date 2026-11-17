@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+# This repo does not vendor the core; ignore logs/state created when its hooks run here.
+.coding-plugin/
+.DS_Store

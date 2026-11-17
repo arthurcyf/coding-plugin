@@ -1,0 +1,47 @@
+{
+  "_comment": "Deny rules for guard-command. type=regex matches the whole command with Python re.search; other types are structural checks implemented in coding_plugin.py and applied to each command segment. Disable a rule with \"disabledGuards\": [\"<id>\"] in .coding-plugin.json; add your own with commandRules.extraDeny.",
+  "rules": [
+    {
+      "id": "rm-recursive-dangerous",
+      "type": "rm-recursive",
+      "message": "Recursive delete of the filesystem root, your home directory, the repository root or a bare wildcard is blocked.",
+      "targets": ["/", "/*", "~", "~/", "~/*", "$HOME", "${HOME}", "$HOME/*", "${HOME}/*", ".", "./", "./*", "*", "..", "../", ".*"]
+    },
+    {
+      "id": "git-force-push-protected",
+      "type": "git-force-push",
+      "guard": "force-push",
+      "message": "Force-pushing to (or deleting) a protected branch rewrites shared history. Push to a feature branch and open a pull request instead."
+    },
+    {
+      "id": "git-reset-hard-protected",
+      "type": "git-reset-hard",
+      "message": "git reset --hard on a protected branch discards work. Create a branch first, or use git stash."
+    },
+    {
+      "id": "pipe-to-shell",
+      "type": "regex",
+      "pattern": "\\b(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^|;&\\n]*\\|\\s*(?:sudo\\s+)?(?:sh|bash|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node|iex|Invoke-Expression)\\b",
+      "message": "Piping a downloaded script straight into an interpreter runs unreviewed code. Download it to a file, review it, then run it."
+    },
+    {
+      "id": "shell-eval-download",
+      "type": "regex",
+      "pattern": "\\b(?:sh|bash|zsh|dash|ksh)\\b[^|;&\\n]*(?:<\\(|\\$\\()\\s*(?:curl|wget)\\b",
+      "message": "Executing a downloaded script via process substitution runs unreviewed code. Download it to a file, review it, then run it."
+    },
+    {
+      "id": "chmod-777-recursive",
+      "type": "regex",
+      "pattern": "\\bchmod\\b(?=[^;&|\\n]*\\s(?:-[a-zA-Z]*R[a-zA-Z]*|--recursive)(?:\\s|$))(?=[^;&|\\n]*\\s(?:0?777|a\\+rwx|ugo\\+rwx|a=rwx)(?:\\s|$))",
+      "message": "Recursive chmod 777 makes everything world-writable. Grant only the permissions that are needed."
+    },
+    {
+      "id": "read-secret-file",
+      "type": "secret-read",
+      "guard": "read-secrets",
+      "message": "Reading secret files exposes credentials in the session transcript. Ask the user for the specific non-secret value you need.",
+      "commands": ["cat", "tac", "less", "more", "head", "tail", "bat", "batcat", "nl", "od", "xxd", "hexdump", "strings", "base64", "grep", "egrep", "fgrep", "rg", "ag", "awk", "gawk", "sed", "cut", "sort", "uniq", "cp", "scp", "rsync", "gpg", "openssl", "type", "Get-Content", "gc"]
+    }
+  ]
+}

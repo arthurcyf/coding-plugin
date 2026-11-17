@@ -1,0 +1,8 @@
+{
+  "protectedPaths": [".env", ".env.*", "!.env.example", "secrets/**", "**/*.pem", "**/*.key", ".git/**"],
+  "protectedBranches": ["main", "master"],
+  "requireChecksOnStop": true,
+  "stopRetryCap": 3,
+  "formatOnEdit": true,
+  "disabledGuards": []
+}

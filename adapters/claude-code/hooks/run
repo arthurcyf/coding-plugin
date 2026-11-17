@@ -1,0 +1,22 @@
+#!/bin/sh
+# Claude Code hook launcher: finds Python 3.9+ and runs the shim (stdin passes through).
+# Fails open: if no interpreter is found, the hook does nothing.
+dir=$(cd "$(dirname "$0")" && pwd)
+case "$(uname -s 2>/dev/null)" in
+  MINGW* | MSYS* | CYGWIN*)
+    # Windows: the py launcher is fastest and never a Store stub; python/python3 may be
+    # Microsoft Store aliases (slow, or stubs that only print an install hint), so verify them.
+    if command -v py >/dev/null 2>&1; then exec py -3 "$dir/claude_shim.py"; fi
+    for py in python python3; do
+      if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+        exec "$py" "$dir/claude_shim.py"
+      fi
+    done
+    ;;
+  *)
+    if command -v python3 >/dev/null 2>&1; then exec python3 "$dir/claude_shim.py"; fi
+    if command -v python >/dev/null 2>&1; then exec python "$dir/claude_shim.py"; fi
+    ;;
+esac
+echo "coding-plugin: Python 3.9+ not found; hooks are inactive" >&2
+exit 0

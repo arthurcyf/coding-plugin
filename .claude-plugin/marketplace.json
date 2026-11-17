@@ -1,0 +1,15 @@
+{
+  "name": "coding-plugin",
+  "owner": {
+    "name": "Arthur Chan"
+  },
+  "description": "Marketplace for coding-plugin, agent-neutral guardrails for AI coding agents.",
+  "plugins": [
+    {
+      "name": "coding-plugin",
+      "source": "./adapters/claude-code",
+      "description": "Agent-neutral guardrails for AI coding: command and path guards, format on edit, stop-time checks, and fix-issue / feature / review / handoff workflows.",
+      "category": "development"
+    }
+  ]
+}

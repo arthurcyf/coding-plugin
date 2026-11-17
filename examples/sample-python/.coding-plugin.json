@@ -1,0 +1,7 @@
+{
+  "checkCommand": "scripts/check",
+  "protectedPaths": [".env", ".env.*", "!.env.example", "migrations/**"],
+  "requireChecksOnStop": true,
+  "stopRetryCap": 3,
+  "formatOnEdit": true
+}

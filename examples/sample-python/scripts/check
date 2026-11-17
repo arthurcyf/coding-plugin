@@ -1,0 +1,14 @@
+#!/bin/sh
+# Project check (coding-plugin convention): format, lint, tests. Exits non-zero on failure.
+set -eu
+cd "$(dirname "$0")/.."
+
+run() { echo "+ $*"; "$@"; }
+
+if command -v ruff >/dev/null 2>&1; then
+  run ruff format --check .
+  run ruff check .
+else
+  echo "warning: ruff not installed; skipping format/lint" >&2
+fi
+run "${PYTHON:-python3}" -m unittest discover -s tests -q

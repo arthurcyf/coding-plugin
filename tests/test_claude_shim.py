@@ -119,6 +119,15 @@ class ShimEndToEnd(RepoTestCase):
         self.assertEqual(self.run_shim("pre_bash_dangerous", via_launcher=True).returncode, 2)
         self.assertEqual(self.run_shim("pre_bash_safe", via_launcher=True).returncode, 0)
 
+    def test_trace_picks_up_session_id_with_no_shim_change(self):
+        self.write(".coding-plugin.json", json.dumps({"trace": {"enabled": True}}))
+        self.assertEqual(self.run_shim("pre_bash_safe").returncode, 0)
+        trace_path = os.path.join(self.repo, ".coding-plugin", "log", "trace.jsonl")
+        with open(trace_path, encoding="utf-8") as fh:
+            rec = json.loads(fh.readline())
+        self.assertEqual(rec["session_id"], "sess-1")
+        self.assertEqual(rec["layer"], "claude-code")
+
 
 if __name__ == "__main__":
     unittest.main()

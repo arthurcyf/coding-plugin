@@ -12,6 +12,7 @@ class Config(RepoTestCase):
         self.assertEqual(warnings, [])
         self.assertTrue(cfg["requireChecksOnStop"])
         self.assertIn(".env", cfg["secretPaths"])
+        self.assertFalse(cfg["trace"]["enabled"])
 
     def test_invalid_json_falls_back(self):
         self.write(".coding-plugin.json", "{oops")

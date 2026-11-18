@@ -89,6 +89,7 @@ The per-agent designs are in [adapters/README.md](adapters/README.md).
 | `protectedBranches` | `["main", "master"]` | No force-push, deletion or `reset --hard` on these branches; session warning when on one |
 | `commandRules` | `{"extraDeny": [], "allow": []}` | Add deny rules (`{"id", "pattern", "message"}`), or allow-list regexes that skip all command rules |
 | `disabledGuards` | `[]` | Guard names or rule ids to turn off (see below) |
+| `trace` | `{"enabled": false, "maxBytes": 1000000}` | Write structured execution traces to `.coding-plugin/log/trace.jsonl` for debugging what the plugin decided and why. Off by default; see [Tracing](#tracing) |
 
 **Patterns** follow gitignore style:
 - A pattern without `/` matches any path component.
@@ -142,6 +143,19 @@ Command rule ids are listed in [core/rules/commands.json](core/rules/commands.js
 - `read-secret-file`
 
 For a false positive in the secret scan, add `coding-plugin:allow-secret` in a comment on that line.
+
+### Tracing
+Off by default, since guards run on every tool call in a live session. Turn it on with `"trace": {"enabled": true}` in `.coding-plugin.json`, or `CODING_PLUGIN_TRACE=1` for a single invocation, and each guard decision is appended as one JSON line to `.coding-plugin/log/trace.jsonl` (rotated at `trace.maxBytes`, 1MB by default):
+
+```
+{"ts": "...", "trace_id": "a1b2c3d4", "parent_id": null, "span": "guard_command",
+ "layer": "claude-code", "event": "pre_command", "session_id": "...", "outcome": "deny",
+ "rule_id": "rm-recursive-dangerous", "cmd_hash": "...", "cmd_len": 8, "duration_ms": 0.4, "exit_code": 2}
+```
+
+`trace_id` is shared by every record from one invocation (e.g. a `pre-commit` call and the `scan_secrets` call it makes inside it); `session_id` is shared across a whole Claude Code session. Records never contain full command text, file contents, matched secret values or check output — only identifiers, hashes, counts and timings, the same "values not shown" discipline the secret scanner already uses.
+
+Inspect it with `coding_plugin.py trace tail [--lines N]` or `coding_plugin.py trace show --trace-id <id>` (or `--session-id <id>`), or just read the file directly.
 
 ## Behaviour notes
 

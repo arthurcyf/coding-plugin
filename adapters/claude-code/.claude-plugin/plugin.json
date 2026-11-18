@@ -1,6 +1,6 @@
 {
   "name": "coding-plugin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Agent-neutral guardrails for AI coding: command and path guards, format on edit, stop-time checks, and fix-issue / feature / review / handoff workflows.",
   "author": {
     "name": "Arthur Chan"

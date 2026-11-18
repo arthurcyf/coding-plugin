@@ -45,9 +45,9 @@ Then, inside a project, run `/coding-plugin:init`. It detects the stack and asks
 - the git hooks
 - the CI workflow
 
-Skills: `/coding-plugin:init`, `/coding-plugin:fix-issue`, `/coding-plugin:feature`, `/coding-plugin:review`, `/coding-plugin:handoff`.
+Skills: `/coding-plugin:init`, `/coding-plugin:fix-issue`, `/coding-plugin:feature`, `/coding-plugin:review`, `/coding-plugin:handoff`, `/coding-plugin:sandbox`.
 
-Subagents: `coding-plugin:reviewer`, `coding-plugin:test-writer`, `coding-plugin:investigator`, `coding-plugin:security-auditor`.
+Subagents: `coding-plugin:reviewer`, `coding-plugin:test-writer`, `coding-plugin:investigator`, `coding-plugin:security-auditor`, `coding-plugin:sandbox-worker`.
 
 ### Any other agent, or none
 Clone this repo once, then in each project:
@@ -156,6 +156,11 @@ Off by default, since guards run on every tool call in a live session. Turn it o
 `trace_id` is shared by every record from one invocation (e.g. a `pre-commit` call and the `scan_secrets` call it makes inside it); `session_id` is shared across a whole Claude Code session. Records never contain full command text, file contents, matched secret values or check output — only identifiers, hashes, counts and timings, the same "values not shown" discipline the secret scanner already uses.
 
 Inspect it with `coding_plugin.py trace tail [--lines N]` or `coding_plugin.py trace show --trace-id <id>` (or `--session-id <id>`), or just read the file directly.
+
+### Sandboxed subagent tasks
+`/coding-plugin:sandbox <task description>` runs a task in a disposable git worktree and branch (`sandbox/<slug>`, created as a sibling directory), delegated to the `coding-plugin:sandbox-worker` subagent. Nothing is merged, pushed or opened as a PR automatically — you get the worktree path and the exact commands to review, merge or discard it yourself.
+
+This is directory/branch isolation for review purposes, not a security sandbox: the subagent runs with the same OS user and permissions as the rest of the session, unless the skill also starts a container (only attempted when Docker is available and the task calls for it). Your project's git hooks still run inside the sandbox worktree — `core.hooksPath` is shared by every worktree of a repository — so secret scanning and protected-path/branch checks keep applying when the subagent commits or pushes from there.
 
 ## Behaviour notes
 

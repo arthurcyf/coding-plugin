@@ -3,6 +3,7 @@
 adapters/claude-code/.claude-plugin/plugin.json
 adapters/claude-code/agents/investigator.md
 adapters/claude-code/agents/reviewer.md
+adapters/claude-code/agents/sandbox-worker.md
 adapters/claude-code/agents/security-auditor.md
 adapters/claude-code/agents/test-writer.md
 adapters/claude-code/lib/coding_plugin.py
@@ -37,3 +38,5 @@ adapters/claude-code/skills/init/assets/templates/githooks/pre-push
 adapters/claude-code/skills/review/SKILL.md
 adapters/claude-code/skills/review/references/reviewer.md
 adapters/claude-code/skills/review/references/security-auditor.md
+adapters/claude-code/skills/sandbox/SKILL.md
+adapters/claude-code/skills/sandbox/references/sandbox-worker.md

@@ -46,7 +46,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IS_WINDOWS = os.name == "nt"

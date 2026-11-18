@@ -159,6 +159,7 @@ CLAUDE_SKILL_EXTRAS: Dict[str, List[Tuple[str, object]]] = {
     "feature": [("argument-hint", "<feature description>")],
     "review": [("argument-hint", "[base branch]")],
     "handoff": [],
+    "sandbox": [("argument-hint", "<task description>")],
 }
 
 

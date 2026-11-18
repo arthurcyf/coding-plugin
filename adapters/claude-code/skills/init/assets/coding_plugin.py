@@ -21,6 +21,11 @@ Exit codes: 0 = allow / pass, 2 = deny / block (reason on stderr).
 The toolkit fails open: an internal error is logged to
 ``.coding-plugin/log/coding-plugin.log`` and the action is allowed (exit 0),
 unless ``CODING_PLUGIN_STRICT=1`` is set, in which case it exits 70.
+
+Tracing (off by default): set ``"trace": {"enabled": true}`` in
+``.coding-plugin.json``, or ``CODING_PLUGIN_TRACE=1`` for one invocation, to
+record what each guard decided to ``.coding-plugin/log/trace.jsonl``. See
+``coding_plugin.py trace --help``.
 """
 from __future__ import annotations
 
@@ -37,10 +42,11 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IS_WINDOWS = os.name == "nt"
@@ -84,6 +90,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "protectedBranches": ["main", "master"],
     "commandRules": {"extraDeny": [], "allow": []},
     "disabledGuards": [],
+    "trace": {"enabled": False, "maxBytes": 1_000_000},
 }
 
 _CONFIG_TYPES: Dict[str, Tuple[type, ...]] = {
@@ -99,6 +106,7 @@ _CONFIG_TYPES: Dict[str, Tuple[type, ...]] = {
     "protectedBranches": (list,),
     "commandRules": (dict,),
     "disabledGuards": (list,),
+    "trace": (dict,),
 }
 
 
@@ -155,6 +163,44 @@ def log(root: Optional[str], msg: str, level: str = "INFO") -> None:
             fh.write(f"{stamp} {level} {msg}\n")
     except Exception:
         pass
+
+
+def _trace_write(root: Optional[str], record: Dict[str, Any], max_bytes: int = 1_000_000) -> None:
+    """Append one JSON record to .coding-plugin/log/trace.jsonl. Never raises.
+
+    Trace fields must be identifiers, counts, booleans, hashes or repo-relative
+    paths only -- never free-text command/file content or regex-matched
+    substrings (the same "values not shown" discipline scan_secrets uses).
+    """
+    if not root:
+        return
+    try:
+        d = _ensure_state_dir(root, "log")
+        path = os.path.join(d, "trace.jsonl")
+        if os.path.exists(path) and os.path.getsize(path) > max_bytes:
+            os.replace(path, path + ".1")
+        record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **record}
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+_RULE_ID_RE = re.compile(r"rule `([^`]+)`")
+
+
+def _trace_rule_id(message: str) -> Optional[str]:
+    """Best-effort rule id for a trace record, parsed from an existing block message. Never the matched value."""
+    m = _RULE_ID_RE.search(message or "")
+    return m.group(1) if m else None
+
+
+def _trace_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()[:16]
+
+
+def _trace_path(path: str) -> str:
+    return path.replace("\\", "/").strip()[:200]
 
 
 def load_state(root: str, name: str) -> Dict[str, Any]:
@@ -234,6 +280,11 @@ def load_config(root: str) -> Tuple[Dict[str, Any], List[str]]:
     cfg["commandRules"] = {
         "extraDeny": list(rules.get("extraDeny") or []),
         "allow": list(rules.get("allow") or []),
+    }
+    trace_cfg = cfg.get("trace") or {}
+    cfg["trace"] = {
+        "enabled": bool(trace_cfg.get("enabled", False)),
+        "maxBytes": int(trace_cfg.get("maxBytes", 1_000_000)),
     }
     if cfg["secretPaths"] is None:
         cfg["secretPaths"] = list(load_rules("secrets.json").get("secretFiles", []))
@@ -371,6 +422,11 @@ class Ctx:
         self.config, self.warnings = load_config(self.root)
         self._branch: Optional[str] = None
         self._branch_loaded = False
+        self.trace_id = uuid.uuid4().hex[:8]
+        self.session_id = ""
+        self.trace_enabled = (
+            os.environ.get("CODING_PLUGIN_TRACE") == "1" or bool(self.config["trace"]["enabled"])
+        )
 
     def disabled(self, name: str) -> bool:
         env = os.environ.get("CODING_PLUGIN_DISABLE", "")
@@ -380,6 +436,37 @@ class Ctx:
 
     def log(self, msg: str, level: str = "INFO") -> None:
         log(self.root, msg, level)
+
+    def trace(
+        self,
+        span: str,
+        result: "Result",
+        layer: str = "cli",
+        event: str = "",
+        rule_id: Optional[str] = None,
+        parent_span: Optional[str] = None,
+        duration_ms: Optional[float] = None,
+        **extra: Any,
+    ) -> None:
+        """Append one record to .coding-plugin/log/trace.jsonl. No-op (and never raises) unless enabled."""
+        if not self.trace_enabled:
+            return
+        outcome = "deny" if result.blocked else ("notice" if result.notice else "allow")
+        record: Dict[str, Any] = {
+            "trace_id": self.trace_id,
+            "parent_id": f"{self.trace_id}:{parent_span}" if parent_span else None,
+            "span": span,
+            "layer": layer,
+            "event": event,
+            "session_id": self.session_id,
+            "outcome": outcome,
+            "rule_id": rule_id,
+            "exit_code": result.code,
+        }
+        if duration_ms is not None:
+            record["duration_ms"] = round(duration_ms, 2)
+        record.update(extra)
+        _trace_write(self.root, record, int(self.config["trace"]["maxBytes"]))
 
     @property
     def protected_branches(self) -> List[str]:
@@ -1136,7 +1223,10 @@ _BYPASS_HINT = (
 
 def pre_commit(ctx: Ctx) -> Result:
     msgs: List[str] = []
+    t0 = time.monotonic()
     r = scan_secrets(ctx, staged=True)
+    ctx.trace("scan_secrets", r, layer="git-hook", event="pre-commit", parent_span="pre_commit",
+              duration_ms=(time.monotonic() - t0) * 1000)
     if r.blocked:
         msgs.append(r.message)
     if not ctx.disabled("guard-path"):
@@ -1153,7 +1243,10 @@ def pre_commit(ctx: Ctx) -> Result:
     if ctx.config.get("preCommitCheck") and not ctx.disabled("run-checks"):
         cmd = resolve_check_command(ctx)
         if cmd:
+            t1 = time.monotonic()
             rc, out, _ = execute_check(ctx, cmd)
+            ctx.trace("run_checks", Result(EXIT_BLOCK if rc != 0 else 0), layer="git-hook", event="pre-commit",
+                      parent_span="pre_commit", duration_ms=(time.monotonic() - t1) * 1000, check_rc=rc)
             if rc != 0:
                 status = "timed out" if rc is None else f"exited {rc}"
                 msgs.append(f"coding-plugin: `{cmd}` {status}:\n{summarize(out)}")
@@ -1192,7 +1285,10 @@ def pre_push(ctx: Ctx, stdin_text: str) -> Result:
     if not msgs and pushing and not ctx.disabled("run-checks"):
         cmd = resolve_check_command(ctx)
         if cmd:
+            t1 = time.monotonic()
             rc, out, _ = execute_check(ctx, cmd)
+            ctx.trace("run_checks", Result(EXIT_BLOCK if rc != 0 else 0), layer="git-hook", event="pre-push",
+                      parent_span="pre_push", duration_ms=(time.monotonic() - t1) * 1000, check_rc=rc)
             if rc != 0:
                 status = "timed out" if rc is None else f"exited {rc}"
                 msgs.append(f"coding-plugin: `{cmd}` {status}; push blocked.\n{summarize(out)}")
@@ -1203,14 +1299,19 @@ def pre_push(ctx: Ctx, stdin_text: str) -> Result:
 
 def ci(ctx: Ctx) -> Result:
     msgs: List[str] = []
+    t0 = time.monotonic()
     r = scan_secrets(ctx, staged=False)
+    ctx.trace("scan_secrets", r, layer="ci", event="ci", parent_span="ci", duration_ms=(time.monotonic() - t0) * 1000)
     if r.blocked:
         msgs.append(r.message)
     cmd = resolve_check_command(ctx)
     if not cmd:
         msgs.append("coding-plugin: no check command found (add scripts/check or set checkCommand).")
     elif not ctx.disabled("run-checks"):
+        t1 = time.monotonic()
         rc, out, elapsed = execute_check(ctx, cmd)
+        ctx.trace("run_checks", Result(EXIT_BLOCK if rc != 0 else 0), layer="ci", event="ci",
+                  parent_span="ci", duration_ms=(time.monotonic() - t1) * 1000, check_rc=rc)
         sys.stdout.write(out)
         if rc != 0:
             status = "timed out" if rc is None else f"exited {rc}"
@@ -1519,19 +1620,34 @@ def install(target: str, stack: str, agents: List[str], dry_run: bool, overwrite
 
 def _handle(event: Dict[str, Any]) -> Result:
     ctx = Ctx(event.get("cwd") or None)
+    ctx.session_id = str(event.get("session_id") or "")
     kind = event.get("event")
+    t0 = time.monotonic()
+
+    def done(span: str, result: Result, **extra: Any) -> Result:
+        ctx.trace(span, result, layer="claude-code", event=str(kind or ""),
+                  duration_ms=(time.monotonic() - t0) * 1000, **extra)
+        return result
+
     if kind == "pre_command":
-        return guard_command(ctx, str(event.get("command") or ""))
+        command = str(event.get("command") or "")
+        result = guard_command(ctx, command)
+        return done("guard_command", result, rule_id=_trace_rule_id(result.message),
+                    cmd_hash=_trace_hash(command), cmd_len=len(command))
     if kind == "pre_edit":
-        return guard_path(ctx, str(event.get("path") or ""), "edit")
+        path = str(event.get("path") or "")
+        return done("guard_path", guard_path(ctx, path, "edit"), path=_trace_path(path), mode="edit")
     if kind == "pre_read":
-        return guard_path(ctx, str(event.get("path") or ""), "read")
+        path = str(event.get("path") or "")
+        return done("guard_path", guard_path(ctx, path, "read"), path=_trace_path(path), mode="read")
     if kind == "post_edit":
-        return format_file(ctx, str(event.get("path") or ""))
+        path = str(event.get("path") or "")
+        return done("format_file", format_file(ctx, path), path=_trace_path(path))
     if kind == "stop":
-        return run_checks(ctx, str(event.get("session_id") or ""), bool(event.get("continuing")))
+        result = run_checks(ctx, str(event.get("session_id") or ""), bool(event.get("continuing")))
+        return done("run_checks", result)
     if kind == "session_start":
-        return session_context(ctx, str(event.get("session_id") or ""))
+        return done("session_context", session_context(ctx, str(event.get("session_id") or "")))
     ctx.log(f"unknown event {kind!r}", "WARN")
     return Result()
 
@@ -1618,7 +1734,41 @@ def build_parser() -> argparse.ArgumentParser:
                         "add), otherwise chosen from the git remote (default github)")
     sub.add_parser("hook", help="process a normalized event from stdin")
     sub.add_parser("version", help="print the version")
+    s = sub.add_parser("trace", help="inspect .coding-plugin/log/trace.jsonl")
+    tsub = s.add_subparsers(dest="trace_cmd", required=True)
+    t = tsub.add_parser("tail", help="print the last N trace records")
+    t.add_argument("--lines", type=int, default=20)
+    t = tsub.add_parser("show", help="print trace records matching a trace id or session id")
+    t.add_argument("--trace-id", default=None)
+    t.add_argument("--session-id", default=None)
     return p
+
+
+def trace_show(root: str, trace_id: Optional[str] = None, session_id: Optional[str] = None,
+                lines: Optional[int] = None) -> Result:
+    """Read .coding-plugin/log/trace.jsonl, optionally filtered, for `coding_plugin.py trace`."""
+    path = os.path.join(root, STATE_DIR, "log", "trace.jsonl")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            rows = [ln.rstrip("\n") for ln in fh if ln.strip()]
+    except OSError:
+        return Result(context="(no trace records yet; enable tracing first -- see README.)")
+    if trace_id or session_id:
+        kept = []
+        for ln in rows:
+            try:
+                rec = json.loads(ln)
+            except ValueError:
+                continue
+            if trace_id and rec.get("trace_id") != trace_id:
+                continue
+            if session_id and rec.get("session_id") != session_id:
+                continue
+            kept.append(ln)
+        rows = kept
+    if lines is not None:
+        rows = rows[-lines:]
+    return Result(context="\n".join(rows) if rows else "(no matching trace records)")
 
 
 def _dispatch(args: argparse.Namespace) -> Result:
@@ -1638,26 +1788,41 @@ def _dispatch(args: argparse.Namespace) -> Result:
     if args.cmd == "install":
         agents = [a.strip() for a in args.agents.split(",") if a.strip()]
         return install(args.target, args.stack, agents, args.dry_run, args.overwrite, args.ci)
+    if args.cmd == "trace":
+        root = find_repo_root(os.path.abspath(args.cwd or os.getcwd())) or os.path.abspath(args.cwd or os.getcwd())
+        if args.trace_cmd == "tail":
+            return trace_show(root, lines=args.lines)
+        return trace_show(root, trace_id=args.trace_id, session_id=args.session_id)
     ctx = Ctx(args.cwd)
+    t0 = time.monotonic()
+
+    def done(span: str, result: Result, layer: str = "cli", **extra: Any) -> Result:
+        ctx.trace(span, result, layer=layer, event=args.cmd, duration_ms=(time.monotonic() - t0) * 1000, **extra)
+        return result
+
     if args.cmd == "guard-command":
         words = [w for w in args.command if w != "--"] if args.command[:1] == ["--"] else args.command
-        return guard_command(ctx, " ".join(words) if len(words) != 1 else words[0])
+        command = " ".join(words) if len(words) != 1 else words[0]
+        result = guard_command(ctx, command)
+        return done("guard_command", result, rule_id=_trace_rule_id(result.message),
+                    cmd_hash=_trace_hash(command), cmd_len=len(command))
     if args.cmd == "guard-path":
-        return guard_path(ctx, args.path, args.mode)
+        return done("guard_path", guard_path(ctx, args.path, args.mode),
+                    path=_trace_path(args.path), mode=args.mode)
     if args.cmd == "format-file":
-        return format_file(ctx, args.path)
+        return done("format_file", format_file(ctx, args.path), path=_trace_path(args.path))
     if args.cmd == "run-checks":
-        return run_checks(ctx, args.session, args.continuing, args.force)
+        return done("run_checks", run_checks(ctx, args.session, args.continuing, args.force))
     if args.cmd == "session-context":
-        return session_context(ctx, args.session)
+        return done("session_context", session_context(ctx, args.session))
     if args.cmd == "scan-secrets":
-        return scan_secrets(ctx, staged=not args.all)
+        return done("scan_secrets", scan_secrets(ctx, staged=not args.all))
     if args.cmd == "pre-commit":
-        return pre_commit(ctx)
+        return done("pre_commit", pre_commit(ctx), layer="git-hook")
     if args.cmd == "pre-push":
-        return pre_push(ctx, read_stdin_text())
+        return done("pre_push", pre_push(ctx, read_stdin_text()), layer="git-hook")
     if args.cmd == "ci":
-        return ci(ctx)
+        return done("ci", ci(ctx), layer="ci")
     raise ValueError(f"unknown command {args.cmd}")
 
 

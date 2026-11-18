@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-18
+
+### Added
+- Execution tracing: off by default, enabled with `"trace": {"enabled": true}` in `.coding-plugin.json` or `CODING_PLUGIN_TRACE=1`.
+  - One JSON record per guard decision, appended to `.coding-plugin/log/trace.jsonl` (rotated at `trace.maxBytes`, default 1MB).
+  - Records a `trace_id` per invocation (shared by nested calls, e.g. `pre-commit`'s own `scan_secrets` call) and the Claude Code `session_id` when available; never contains full command text, file contents, matched secret values or check output.
+  - `coding_plugin.py trace tail [--lines N]` and `coding_plugin.py trace show --trace-id <id>|--session-id <id>` to inspect it.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

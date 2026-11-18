@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-18
+
+### Added
+- `/coding-plugin:sandbox <task description>` skill and `coding-plugin:sandbox-worker` subagent: runs a task in a disposable git worktree and branch (`sandbox/<slug>`), so the work never touches the caller's working tree until reviewed.
+  - Isolation is a git worktree by default (zero new dependencies); the skill may additionally use a container when Docker is available and the task calls for it.
+  - Nothing is merged, pushed or opened as a PR automatically -- the skill reports the worktree path and the exact review/merge/discard commands.
+  - No new MCP server or core script changes: this is a plain skill + role, in keeping with the project's existing agent-neutral, hooks-only enforcement design.
+
 ## [0.3.0] - 2026-11-18
 
 ### Added

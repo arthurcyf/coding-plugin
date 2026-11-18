@@ -116,6 +116,10 @@ Inspect it with `coding_plugin.py trace tail [--lines N]` or `coding_plugin.py t
 
 This is directory/branch isolation for review purposes, not a security sandbox: the subagent runs with the same OS user and permissions as the rest of the session, unless the skill also starts a container (only attempted when Docker is available and the task calls for it). Your project's git hooks still run inside the sandbox worktree — `core.hooksPath` is shared by every worktree of a repository — so secret scanning and protected-path/branch checks keep applying when the subagent commits or pushes from there.
 
+## Explaining code
+
+`/coding-plugin:explain <component, feature or question>` (also triggered by asking the agent to explain how something works) traces the code and answers in chat with a fixed structure: the components involved, the data flow between them with `path:line` citations, a Mermaid architecture diagram (omitted with a reason when it would add nothing), the design patterns actually present, and why this design was chosen over the alternatives. Rationale comes from comments, docs and git history where available; anything inferred is labelled as inferred. It never changes code, and only writes the explanation to a file if you ask.
+
 ## Behaviour notes
 
 - **Fails open.** A bug or crash in the toolkit is logged to `.coding-plugin/log/coding-plugin.log` and never blocks your work. The only things that block are the deliberate decisions: a deny or a failed check.

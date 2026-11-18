@@ -8,7 +8,7 @@
     {
       "name": "coding-plugin",
       "source": "./adapters/claude-code",
-      "description": "Agent-neutral guardrails for AI coding: command and path guards, format on edit, stop-time checks, and fix-issue / feature / review / handoff workflows.",
+      "description": "Agent-neutral guardrails for AI coding: command and path guards, format on edit, stop-time checks, and fix-issue / feature / review / handoff / explain workflows.",
       "category": "development"
     }
   ]

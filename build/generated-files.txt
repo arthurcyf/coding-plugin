@@ -9,6 +9,7 @@ adapters/claude-code/agents/test-writer.md
 adapters/claude-code/lib/coding_plugin.py
 adapters/claude-code/lib/rules/commands.json
 adapters/claude-code/lib/rules/secrets.json
+adapters/claude-code/skills/explain/SKILL.md
 adapters/claude-code/skills/feature/SKILL.md
 adapters/claude-code/skills/feature/references/investigator.md
 adapters/claude-code/skills/feature/references/reviewer.md

@@ -4,7 +4,7 @@ Agent-neutral guardrails that make AI coding agents more reliable in every proje
 - blocks dangerous shell commands and edits to protected or secret files
 - formats files on edit
 - refuses to let the agent stop while the project checks fail
-- ships reusable **fix-issue / feature / review / handoff / sandbox** workflows and reviewer, test-writer, investigator, security-auditor and sandbox-worker roles
+- ships reusable **fix-issue / feature / review / handoff / sandbox / explain** workflows and reviewer, test-writer, investigator, security-auditor and sandbox-worker roles
 
 Claude Code is the first supported agent (as a plugin). Enforcement also works with any agent, or with no agent at all, through git hooks and CI.
 
@@ -45,7 +45,7 @@ Then, inside a project, run `/coding-plugin:init`. It detects the stack and asks
 - the git hooks
 - the CI workflow
 
-Skills: `/coding-plugin:init`, `/coding-plugin:fix-issue`, `/coding-plugin:feature`, `/coding-plugin:review`, `/coding-plugin:handoff`, `/coding-plugin:sandbox`.
+Skills: `/coding-plugin:init`, `/coding-plugin:fix-issue`, `/coding-plugin:feature`, `/coding-plugin:review`, `/coding-plugin:handoff`, `/coding-plugin:sandbox`, `/coding-plugin:explain`.
 
 Subagents: `coding-plugin:reviewer`, `coding-plugin:test-writer`, `coding-plugin:investigator`, `coding-plugin:security-auditor`, `coding-plugin:sandbox-worker`.
 

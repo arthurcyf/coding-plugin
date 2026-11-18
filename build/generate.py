@@ -26,7 +26,7 @@ REPO_URL = "https://github.com/arthurcyf/coding-plugin"
 AUTHOR = {"name": "Arthur Chan"}
 DESCRIPTION = (
     "Agent-neutral guardrails for AI coding: command and path guards, format on edit, "
-    "stop-time checks, and fix-issue / feature / review / handoff workflows."
+    "stop-time checks, and fix-issue / feature / review / handoff / explain workflows."
 )
 
 Outputs = Dict[str, str]
@@ -159,6 +159,7 @@ CLAUDE_SKILL_EXTRAS: Dict[str, List[Tuple[str, object]]] = {
     "feature": [("argument-hint", "<feature description>")],
     "review": [("argument-hint", "[base branch]")],
     "handoff": [],
+    "explain": [("argument-hint", "<component, feature or question>")],
     "sandbox": [("argument-hint", "<task description>")],
 }
 
